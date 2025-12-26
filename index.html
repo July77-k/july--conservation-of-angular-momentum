@@ -1,0 +1,537 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>AI驱动-角动量守恒动画演示</title>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: "Microsoft YaHei", sans-serif;
+        }
+        body {
+            background: #f5f7fa;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+        }
+        .control-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .ai-chat {
+            margin-top: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .chat-header {
+            background: #409eff;
+            color: white;
+            padding: 10px;
+            font-weight: bold;
+        }
+        .chat-content {
+            height: 200px;
+            overflow-y: auto;
+            padding: 10px;
+            background: #fafafa;
+        }
+        .chat-input {
+            display: flex;
+            border-top: 1px solid #e0e0e0;
+        }
+        .chat-input input {
+            flex: 1;
+            padding: 10px;
+            border: none;
+            outline: none;
+        }
+        .chat-input button {
+            background: #409eff;
+            color: white;
+            border: none;
+            padding: 0 15px;
+            cursor: pointer;
+        }
+        .param-group {
+            margin: 15px 0;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        input[type="number"], select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #e0e0e0;
+            border-radius: 4px;
+            margin-bottom: 10px;
+        }
+        button {
+            background: #67c23a;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover {
+            opacity: 0.9;
+        }
+        .animation-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        #animationContainer {
+            width: 100%;
+            height: 600px;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        .data-display {
+            display: flex;
+            justify-content: space-around;
+            margin-top: 15px;
+            padding: 10px;
+            background: #f0f9ff;
+            border-radius: 6px;
+        }
+        .data-item {
+            text-align: center;
+        }
+        .data-label {
+            font-size: 14px;
+            color: #666;
+        }
+        .data-value {
+            font-size: 18px;
+            font-weight: bold;
+            color: #409eff;
+            margin-top: 5px;
+        }
+        .scene-switch {
+            margin: 15px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- 控制与AI交互面板 -->
+        <div class="control-panel">
+            <h2 style="color: #333; margin-bottom: 20px;">角动量守恒演示</h2>
+            
+            <!-- 参数设置 -->
+            <div class="param-group">
+                <label>初始转动惯量 I₁ (kg·m²)</label>
+                <input type="number" id="I1" value="2" min="0.5" max="10" step="0.5">
+                
+                <label>初始角速度 ω₁ (rad/s)</label>
+                <input type="number" id="w1" value="2" min="0.5" max="15" step="0.5">
+                
+                <label>收臂后转动惯量缩放比例</label>
+                <select id="scaleRatio">
+                    <option value="0.3">1/3 (收臂更紧)</option>
+                    <option value="0.5" selected>1/2 (常规收臂)</option>
+                    <option value="0.7">7/10 (轻微收臂)</option>
+                </select>
+                
+                <label>动画速率</label>
+                <input type="number" id="animSpeed" value="1" min="0.1" max="3" step="0.1">
+            </div>
+            
+            <button onclick="updateAnimation()">更新动画</button>
+            
+            <!-- 场景切换 -->
+            <div class="scene-switch">
+                <label>演示场景</label>
+                <select id="sceneType" onchange="switchScene()">
+                    <option value="skate" selected>花样滑冰</option>
+                    <option value="spacecraft">航天器姿态调整</option>
+                    <option value="gymnastics">体操旋转</option>
+                </select>
+            </div>
+            
+            <!-- AI交互面板 -->
+            <div class="ai-chat">
+                <div class="chat-header">AI物理助手</div>
+                <div class="chat-content" id="chatContent">
+                    <div style="margin: 5px 0;"><strong>AI助手：</strong>你可以问我关于角动量守恒的问题，比如"为什么收臂会转得更快？"</div>
+                </div>
+                <div class="chat-input">
+                    <input type="text" id="chatInput" placeholder="输入你的问题...">
+                    <button onclick="sendChat()">发送</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- 动画与数据展示面板 -->
+        <div class="animation-panel">
+            <h3 style="color: #333; margin-bottom: 15px;" id="sceneTitle">花样滑冰运动员旋转 - 角动量守恒</h3>
+            <div id="animationContainer"></div>
+            
+            <!-- 实时数据展示 -->
+            <div class="data-display">
+                <div class="data-item">
+                    <div class="data-label">初始角动量 L₁</div>
+                    <div class="data-value" id="L1Value">4.00</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">收臂后转动惯量 I₂</div>
+                    <div class="data-value" id="I2Value">1.00</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">收臂后角速度 ω₂</div>
+                    <div class="data-value" id="w2Value">4.00</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-label">当前角动量 L</div>
+                    <div class="data-value" id="LValue">4.00</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let scene, camera, renderer, mainObject;
+        let currentL = 0, currentI2 = 0, currentW2 = 0;
+        let animateId = null;
+        let currentScene = "skate";
+        
+        // 初始化Three.js场景
+        function initScene() {
+            // 创建场景
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f9ff);
+            
+            // 创建相机
+            camera = new THREE.PerspectiveCamera(75, document.getElementById('animationContainer').clientWidth / document.getElementById('animationContainer').clientHeight, 0.1, 1000);
+            camera.position.z = 8;
+            
+            // 创建渲染器
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(document.getElementById('animationContainer').clientWidth, document.getElementById('animationContainer').clientHeight);
+            document.getElementById('animationContainer').appendChild(renderer.domElement);
+            
+            // 添加光源
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+            scene.add(ambientLight);
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+            directionalLight.position.set(5, 5, 5);
+            scene.add(directionalLight);
+            
+            // 初始创建滑冰运动员模型
+            createSkateModel();
+            
+            // 监听窗口大小变化
+            window.addEventListener('resize', onWindowResize);
+        }
+        
+        // 创建滑冰运动员模型
+        function createSkateModel() {
+            clearModel();
+            
+            // 身体主体
+            const bodyGeo = new THREE.CylinderGeometry(0.4, 0.4, 2, 32);
+            const bodyMat = new THREE.MeshPhongMaterial({ color: 0x409eff, shininess: 50 });
+            mainObject = new THREE.Mesh(bodyGeo, bodyMat);
+            scene.add(mainObject);
+            
+            // 头部
+            const headGeo = new THREE.SphereGeometry(0.3, 32, 32);
+            const headMat = new THREE.MeshPhongMaterial({ color: 0xffd700 });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 1.2;
+            mainObject.add(head);
+            
+            // 手臂（展臂状态）
+            const armGeo = new THREE.CylinderGeometry(0.1, 0.1, 1.5, 16);
+            const armMat = new THREE.MeshPhongMaterial({ color: 0x409eff });
+            
+            const arm1 = new THREE.Mesh(armGeo, armMat);
+            arm1.position.set(1.2, 0.5, 0);
+            arm1.rotation.z = Math.PI/6;
+            mainObject.add(arm1);
+            
+            const arm2 = arm1.clone();
+            arm2.position.set(-1.2, 0.5, 0);
+            arm2.rotation.z = -Math.PI/6;
+            mainObject.add(arm2);
+            
+            // 腿部
+            const legGeo = new THREE.CylinderGeometry(0.15, 0.15, 1.2, 16);
+            const legMat = new THREE.MeshPhongMaterial({ color: 0x409eff });
+            
+            const leg1 = new THREE.Mesh(legGeo, legMat);
+            leg1.position.set(0.2, -1.2, 0);
+            mainObject.add(leg1);
+            
+            const leg2 = leg1.clone();
+            leg2.position.set(-0.2, -1.2, 0);
+            mainObject.add(leg2);
+            
+            // 保存手臂引用
+            mainObject.arms = [arm1, arm2];
+        }
+        
+        // 创建航天器模型
+        function createSpacecraftModel() {
+            clearModel();
+            
+            // 航天器主体
+            const bodyGeo = new THREE.CylinderGeometry(0.6, 0.8, 3, 32);
+            const bodyMat = new THREE.MeshPhongMaterial({ color: 0x67c23a });
+            mainObject = new THREE.Mesh(bodyGeo, bodyMat);
+            scene.add(mainObject);
+            
+            // 太阳能板
+            const panelGeo = new THREE.PlaneGeometry(2, 1);
+            const panelMat = new THREE.MeshPhongMaterial({ color: 0x409eff, side: THREE.DoubleSide });
+            
+            const panel1 = new THREE.Mesh(panelGeo, panelMat);
+            panel1.position.set(1.5, 0, 0);
+            panel1.rotation.z = Math.PI/4;
+            mainObject.add(panel1);
+            
+            const panel2 = panel1.clone();
+            panel2.position.set(-1.5, 0, 0);
+            panel2.rotation.z = -Math.PI/4;
+            mainObject.add(panel2);
+            
+            // 内部飞轮
+            const wheelGeo = new THREE.SphereGeometry(0.4, 32, 32);
+            const wheelMat = new THREE.MeshPhongMaterial({ color: 0xff4757 });
+            const wheel = new THREE.Mesh(wheelGeo, wheelMat);
+            wheel.position.y = 0;
+            mainObject.add(wheel);
+            
+            // 保存飞轮引用
+            mainObject.wheel = wheel;
+        }
+        
+        // 创建体操运动员模型
+        function createGymnastModel() {
+            clearModel();
+            
+            // 身体主体
+            const bodyGeo = new THREE.CylinderGeometry(0.3, 0.3, 1.8, 32);
+            const bodyMat = new THREE.MeshPhongMaterial({ color: 0xff9f43 });
+            mainObject = new THREE.Mesh(bodyGeo, bodyMat);
+            scene.add(mainObject);
+            
+            // 头部
+            const headGeo = new THREE.SphereGeometry(0.25, 32, 32);
+            const headMat = new THREE.MeshPhongMaterial({ color: 0xffd700 });
+            const head = new THREE.Mesh(headGeo, headMat);
+            head.position.y = 1;
+            mainObject.add(head);
+            
+            // 手臂（展臂状态）
+            const armGeo = new THREE.CylinderGeometry(0.08, 0.08, 1.2, 16);
+            const armMat = new THREE.MeshPhongMaterial({ color: 0xff9f43 });
+            
+            const arm1 = new THREE.Mesh(armGeo, armMat);
+            arm1.position.set(1, 0.4, 0);
+            arm1.rotation.z = Math.PI/4;
+            mainObject.add(arm1);
+            
+            const arm2 = arm1.clone();
+            arm2.position.set(-1, 0.4, 0);
+            arm2.rotation.z = -Math.PI/4;
+            mainObject.add(arm2);
+            
+            // 腿部
+            const legGeo = new THREE.CylinderGeometry(0.1, 0.1, 1, 16);
+            const legMat = new THREE.MeshPhongMaterial({ color: 0xff9f43 });
+            
+            const leg1 = new THREE.Mesh(legGeo, legMat);
+            leg1.position.set(0.15, -1, 0);
+            mainObject.add(leg1);
+            
+            const leg2 = leg1.clone();
+            leg2.position.set(-0.15, -1, 0);
+            mainObject.add(leg2);
+            
+            // 保存手臂引用
+            mainObject.arms = [arm1, arm2];
+        }
+        
+        // 清除现有模型
+        function clearModel() {
+            if (mainObject) {
+                scene.remove(mainObject);
+                mainObject = null;
+            }
+        }
+        
+        // 切换演示场景
+        function switchScene() {
+            currentScene = document.getElementById('sceneType').value;
+            
+            switch(currentScene) {
+                case "skate":
+                    document.getElementById('sceneTitle').textContent = "花样滑冰运动员旋转 - 角动量守恒";
+                    createSkateModel();
+                    break;
+                case "spacecraft":
+                    document.getElementById('sceneTitle').textContent = "航天器姿态调整 - 角动量守恒";
+                    createSpacecraftModel();
+                    break;
+                case "gymnastics":
+                    document.getElementById('sceneTitle').textContent = "体操运动员旋转 - 角动量守恒";
+                    createGymnasticsModel();
+                    break;
+            }
+            
+            // 重新更新动画
+            updateAnimation();
+        }
+        
+        // 更新动画和物理参数
+        function updateAnimation() {
+            // 停止之前的动画
+            if (animateId) {
+                cancelAnimationFrame(animateId);
+            }
+            
+            // 获取参数
+            const I1 = parseFloat(document.getElementById('I1').value);
+            const w1 = parseFloat(document.getElementById('w1').value);
+            const scaleRatio = parseFloat(document.getElementById('scaleRatio').value);
+            const animSpeed = parseFloat(document.getElementById('animSpeed').value);
+            
+            // 计算角动量（守恒）
+            currentL = I1 * w1;
+            currentI2 = I1 * scaleRatio;
+            currentW2 = currentL / currentI2;
+            
+            // 更新数据展示
+            document.getElementById('L1Value').textContent = currentL.toFixed(2);
+            document.getElementById('I2Value').textContent = currentI2.toFixed(2);
+            document.getElementById('w2Value').textContent = currentW2.toFixed(2);
+            document.getElementById('LValue').textContent = currentL.toFixed(2);
+            
+            // 根据场景更新模型姿态
+            if (currentScene === "skate" || currentScene === "gymnastics") {
+                // 收臂动作
+                if (mainObject.arms) {
+                    const arm1 = mainObject.arms[0];
+                    const arm2 = mainObject.arms[1];
+                    
+                    // 根据缩放比例调整手臂位置（收臂）
+                    const armPos = 1.2 * scaleRatio;
+                    arm1.position.set(armPos, 0.5, 0);
+                    arm2.position.set(-armPos, 0.5, 0);
+                }
+            } else if (currentScene === "spacecraft") {
+                // 航天器飞轮旋转
+                if (mainObject.wheel) {
+                    // 飞轮旋转方向与主体相反
+                    mainObject.wheel.rotationSpeed = -currentW2 * 0.01 * animSpeed;
+                }
+            }
+            
+            // 动画渲染函数
+            function animate() {
+                animateId = requestAnimationFrame(animate);
+                
+                if (mainObject) {
+                    // 主体旋转（角速度对应计算值）
+                    mainObject.rotation.y += currentW2 * 0.01 * animSpeed;
+                    
+                    // 航天器飞轮反向旋转
+                    if (currentScene === "spacecraft" && mainObject.wheel) {
+                        mainObject.wheel.rotation.x += mainObject.wheel.rotationSpeed;
+                        mainObject.wheel.rotation.z += mainObject.wheel.rotationSpeed;
+                    }
+                }
+                
+                renderer.render(scene, camera);
+            }
+            
+            // 启动动画
+            animate();
+        }
+        
+        // AI聊天交互
+        function sendChat() {
+            const input = document.getElementById('chatInput').value.trim();
+            if (!input) return;
+            
+            const chatContent = document.getElementById('chatContent');
+            
+            // 添加用户消息
+            const userMsg = document.createElement('div');
+            userMsg.style.margin = "5px 0";
+            userMsg.innerHTML = `<strong>你：</strong>${input}`;
+            chatContent.appendChild(userMsg);
+            
+            // AI回复逻辑
+            let aiReply = "";
+            
+            // 关键词匹配
+            if (input.includes("为什么") && (input.includes("快") || input.includes("收臂"))) {
+                aiReply = "这是角动量守恒定律的体现！当合外力矩为0时，系统角动量L=Iω保持不变。收臂时转动惯量I减小，角速度ω就会增大，所以旋转得更快。";
+            } else if (input.includes("角动量") && input.includes("守恒")) {
+                aiReply = `角动量守恒的条件是系统所受合外力矩为0，此时L₁=L₂即I₁ω₁=I₂ω₂。当前演示中，初始角动量L=${currentL.toFixed(2)}，收臂后I减小，ω相应增大，但L始终不变。`;
+            } else if (input.includes("航天器")) {
+                aiReply = "航天器利用角动量守恒调整姿态：航天器+内部飞轮组成的系统角动量守恒，通过控制飞轮旋转方向，可让航天器向相反方向转动，实现姿态调整。";
+            } else if (input.includes("公式") || input.includes("计算")) {
+                aiReply = `核心公式：角动量L=I×ω（I为转动惯量，ω为角速度）。当前计算：初始I₁=${document.getElementById('I1').value}，ω₁=${document.getElementById('w1').value}，所以L=${currentL.toFixed(2)}；收臂后I₂=${currentI2.toFixed(2)}，因此ω₂=${currentW2.toFixed(2)}。`;
+            } else {
+                aiReply = "你可以问我这些问题：1. 为什么收臂会转得更快？2. 角动量守恒的条件是什么？3. 航天器如何利用角动量守恒调整姿态？";
+            }
+            
+            // 添加AI回复
+            setTimeout(() => {
+                const aiMsg = document.createElement('div');
+                aiMsg.style.margin = "5px 0";
+                aiMsg.innerHTML = `<strong>AI助手：</strong>${aiReply}`;
+                chatContent.appendChild(aiMsg);
+                
+                // 滚动到底部
+                chatContent.scrollTop = chatContent.scrollHeight;
+            }, 500);
+            
+            // 清空输入框
+            document.getElementById('chatInput').value = "";
+        }
+        
+        // 窗口大小调整
+        function onWindowResize() {
+            const container = document.getElementById('animationContainer');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+        
+        // 初始化
+        window.onload = function() {
+            initScene();
+            updateAnimation();
+            
+            // 回车发送聊天消息
+            document.getElementById('chatInput').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    sendChat();
+                }
+            });
+        };
+    </script>
+</body>
+</html>
